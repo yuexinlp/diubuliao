@@ -1424,6 +1424,7 @@ class MapCard extends StatefulWidget {
 
 class _MapCardState extends State<MapCard> {
   final transformation = TransformationController();
+  final mapFuture = ChinaMapData.load();
   Size viewportSize = Size.zero;
 
   void zoomBy(double factor) {
@@ -1459,7 +1460,7 @@ class _MapCardState extends State<MapCard> {
       border: Border.all(color: const Color(0xFFDCE8E3)),
     ),
     child: FutureBuilder<ChinaMapData>(
-      future: ChinaMapData.load(),
+      future: mapFuture,
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator(strokeWidth: 2));
@@ -1513,8 +1514,14 @@ class _MapCardState extends State<MapCard> {
                                   .where((name) => name.trim().isNotEmpty)
                                   .toList();
                               return MapMarker(
-                                left: data.x(province.center.dx),
-                                top: data.y(province.center.dy),
+                                left: data
+                                        .project(province.center, viewportSize)
+                                        .dx /
+                                    viewportSize.width,
+                                top: data
+                                        .project(province.center, viewportSize)
+                                        .dy /
+                                    viewportSize.height,
                                 label: '${entry.key} · ${entry.value}',
                                 markerScale: 1 / scale,
                                 active: entry == active.first,
@@ -1717,8 +1724,39 @@ class ChinaProvince {
 }
 
 class ChinaMapData {
-  ChinaMapData(this.provinces);
+  ChinaMapData(this.provinces) {
+    final points = [
+      for (final province in provinces)
+        for (final ring in province.rings)
+          ...ring,
+    ];
+    if (points.isEmpty) {
+      _minLongitude = 73.5;
+      _maxLongitude = 135.0;
+      _minLatitude = 18.0;
+      _maxLatitude = 54.5;
+      return;
+    }
+    _minLongitude = points
+        .map((point) => point.dx)
+        .reduce((a, b) => a < b ? a : b);
+    _maxLongitude = points
+        .map((point) => point.dx)
+        .reduce((a, b) => a > b ? a : b);
+    _minLatitude = points
+        .map((point) => point.dy)
+        .reduce((a, b) => a < b ? a : b);
+    _maxLatitude = points
+        .map((point) => point.dy)
+        .reduce((a, b) => a > b ? a : b);
+  }
+
   final List<ChinaProvince> provinces;
+  late final double _minLongitude;
+  late final double _maxLongitude;
+  late final double _minLatitude;
+  late final double _maxLatitude;
+
   static Future<ChinaMapData> load() async {
     final raw = jsonDecode(
       await services.rootBundle.loadString('assets/china.json'),
@@ -1769,8 +1807,40 @@ class ChinaMapData {
     return null;
   }
 
-  double x(double longitude) => ((longitude - 73.5) / 61.5).clamp(0.06, .94);
-  double y(double latitude) => ((54.5 - latitude) / 36.5).clamp(0.12, .88);
+  double x(double longitude) {
+    final span = _maxLongitude - _minLongitude;
+    if (span <= 0) return .5;
+    return (.025 + (longitude - _minLongitude) / span * .95).clamp(.025, .975);
+  }
+
+  double y(double latitude) {
+    final span = _maxLatitude - _minLatitude;
+    if (span <= 0) return .5;
+    return (.025 + (_maxLatitude - latitude) / span * .95).clamp(.025, .975);
+  }
+
+  Offset project(Offset coordinate, Size size) {
+    const padding = 8.0;
+    final availableWidth =
+        (size.width - padding * 2).clamp(1.0, double.infinity).toDouble();
+    final availableHeight =
+        (size.height - padding * 2).clamp(1.0, double.infinity).toDouble();
+    final longitudeSpan = (_maxLongitude - _minLongitude).abs();
+    final latitudeSpan = (_maxLatitude - _minLatitude).abs();
+    final horizontalScale = availableWidth / longitudeSpan;
+    final verticalScale = availableHeight / latitudeSpan;
+    final scale = horizontalScale < verticalScale
+        ? horizontalScale
+        : verticalScale;
+    final mapWidth = longitudeSpan * scale;
+    final mapHeight = latitudeSpan * scale;
+    final left = (size.width - mapWidth) / 2;
+    final top = (size.height - mapHeight) / 2;
+    return Offset(
+      left + (coordinate.dx - _minLongitude) * scale,
+      top + (_maxLatitude - coordinate.dy) * scale,
+    );
+  }
 }
 
 class ChinaMapPainter extends CustomPainter {
@@ -1795,10 +1865,7 @@ class ChinaMapPainter extends CustomPainter {
         final path = Path();
         for (var i = 0; i < ring.length; i++) {
           final point = ring[i];
-          final projected = Offset(
-            data.x(point.dx) * size.width,
-            data.y(point.dy) * size.height,
-          );
+          final projected = data.project(point, size);
           if (i == 0) {
             path.moveTo(projected.dx, projected.dy);
           } else {

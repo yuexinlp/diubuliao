@@ -34,6 +34,28 @@ void main() {
     expect(phoneRegion('19900000000'), '归属地待识别');
   });
 
+  test('projects the complete China map without clipping its bounds', () {
+    final map = ChinaMapData([
+      ChinaProvince(
+        name: 'test bounds',
+        center: const Offset(104, 35),
+        rings: [
+          [
+            const Offset(73.48, 18.1),
+            const Offset(134.8, 18.1),
+            const Offset(134.8, 53.35),
+            const Offset(73.48, 53.35),
+          ],
+        ],
+      ),
+    ]);
+
+    expect(map.x(73.48), lessThan(0.06));
+    expect(map.x(134.8), greaterThan(0.94));
+    expect(map.y(53.35), lessThan(0.12));
+    expect(map.y(18.1), greaterThan(0.88));
+  });
+
   test('parses UTF-8 quoted-printable vCards', () {
     final bytes = Uint8List.fromList(
       utf8.encode(
