@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:ui' show Size;
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -55,6 +56,39 @@ void main() {
     expect(map.y(53.35), lessThan(0.12));
     expect(map.y(18.1), greaterThan(0.88));
   });
+
+  test(
+    'uses geographic scale so the China map is not horizontally stretched',
+    () {
+      final map = ChinaMapData([
+        ChinaProvince(
+          name: 'test projection',
+          center: const Offset(104, 35),
+          rings: [
+            [
+              const Offset(73.48, 18.1),
+              const Offset(134.8, 18.1),
+              const Offset(134.8, 53.35),
+              const Offset(73.48, 53.35),
+            ],
+          ],
+        ),
+      ]);
+
+      final topLeft = map.project(
+        const Offset(73.48, 53.35),
+        const Size(1000, 1000),
+      );
+      final bottomRight = map.project(
+        const Offset(134.8, 18.1),
+        const Size(1000, 1000),
+      );
+      final aspect =
+          (bottomRight.dx - topLeft.dx) / (bottomRight.dy - topLeft.dy);
+
+      expect(aspect, closeTo(1.4, 0.08));
+    },
+  );
 
   test('parses UTF-8 quoted-printable vCards', () {
     final bytes = Uint8List.fromList(
@@ -150,9 +184,7 @@ void main() {
   });
 
   test('does not treat an incomplete voice phone as valid', () {
-    final command = VoiceCommandParser.parse(
-      '新增联系人，姓名张三，手机号1380000',
-    );
+    final command = VoiceCommandParser.parse('新增联系人，姓名张三，手机号1380000');
 
     expect(command.contactDraft?.name, '张三');
     expect(command.contactDraft?.hasValidMobile, isFalse);
@@ -182,39 +214,27 @@ void main() {
     final candidates = [
       const VoiceContactCandidate(name: '张三', phone: '13800000000'),
     ];
-    final match = VoiceContactMatcher.findBest(
-      '幺三八零零零零零零零零',
-      candidates,
-    );
+    final match = VoiceContactMatcher.findBest('幺三八零零零零零零零零', candidates);
 
     expect(match?.name, '张三');
     expect(
-      VoiceContactMatcher.displaySearchQuery(
-        '幺三八零零零零零零零零',
-        candidates,
-      ),
+      VoiceContactMatcher.displaySearchQuery('幺三八零零零零零零零零', candidates),
       '13800000000',
     );
   });
 
   test('fuzzy matches a recognition typo to a unique contact', () {
-    final match = VoiceContactMatcher.findBest(
-      '张山',
-      [
-        const VoiceContactCandidate(name: '张三', phone: '13800000000'),
-      ],
-    );
+    final match = VoiceContactMatcher.findBest('张山', [
+      const VoiceContactCandidate(name: '张三', phone: '13800000000'),
+    ]);
 
     expect(match?.name, '张三');
   });
 
   test('matches common Chinese homophones', () {
-    final match = VoiceContactMatcher.findBest(
-      '王武',
-      [
-        const VoiceContactCandidate(name: '王五', phone: '13800000000'),
-      ],
-    );
+    final match = VoiceContactMatcher.findBest('王武', [
+      const VoiceContactCandidate(name: '王五', phone: '13800000000'),
+    ]);
 
     expect(match?.name, '王五');
     expect(
@@ -232,20 +252,14 @@ void main() {
 
     expect(VoiceContactMatcher.matchesSearch('张三', first), isTrue);
     expect(VoiceContactMatcher.matchesSearch('张三', second), isTrue);
-    expect(
-      VoiceContactMatcher.matchesSearch('幺三八零零零零零零零零', first),
-      isTrue,
-    );
+    expect(VoiceContactMatcher.matchesSearch('幺三八零零零零零零零零', first), isTrue);
   });
 
   test('does not fuzzy match when two contacts are equally close', () {
-    final match = VoiceContactMatcher.findBest(
-      '张山',
-      [
-        const VoiceContactCandidate(name: '张三', phone: '13800000000'),
-        const VoiceContactCandidate(name: '张杉', phone: '13900000000'),
-      ],
-    );
+    final match = VoiceContactMatcher.findBest('张山', [
+      const VoiceContactCandidate(name: '张三', phone: '13800000000'),
+      const VoiceContactCandidate(name: '张杉', phone: '13900000000'),
+    ]);
 
     expect(match, isNull);
   });

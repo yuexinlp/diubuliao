@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
@@ -591,13 +592,10 @@ class _ContactsPageState extends State<ContactsPage> {
         final matched = _matchVoiceContact(command.value);
         if (matched == null) {
           setState(
-            () => voiceFeedback =
-                '已识别：$text，未找到明确联系人“${command.value}”',
+            () => voiceFeedback = '已识别：$text，未找到明确联系人“${command.value}”',
           );
         } else {
-          setState(
-            () => voiceFeedback = '已找到：${matched.name}，正在拨号...',
-          );
+          setState(() => voiceFeedback = '已找到：${matched.name}，正在拨号...');
           await callPhone(context, matched.phone);
         }
         return;
@@ -613,9 +611,7 @@ class _ContactsPageState extends State<ContactsPage> {
       case VoiceCommandType.create:
         final draft = command.contactDraft;
         if (draft != null && !draft.hasValidMobile && mounted) {
-          setState(
-            () => voiceFeedback = '已识别姓名，请补充完整的11位手机号后保存',
-          );
+          setState(() => voiceFeedback = '已识别姓名，请补充完整的11位手机号后保存');
         }
         final result = await showDialog<ContactItem>(
           context: context,
@@ -644,8 +640,7 @@ class _ContactsPageState extends State<ContactsPage> {
     );
     if (match == null) return null;
     return widget.store.contacts.firstWhere(
-      (contact) =>
-          contact.name == match.name && contact.phone == match.phone,
+      (contact) => contact.name == match.name && contact.phone == match.phone,
     );
   }
 
@@ -655,13 +650,14 @@ class _ContactsPageState extends State<ContactsPage> {
         widget.store.contacts.map(_voiceCandidate),
       );
 
-  VoiceContactCandidate _voiceCandidate(ContactItem contact) =>
-      VoiceContactCandidate(
-        name: contact.name,
-        phone: contact.phone,
-        searchText:
-            '${contact.category}${contact.name}${contact.company}${contact.phone}${contact.displayRegion}',
-      );
+  VoiceContactCandidate _voiceCandidate(
+    ContactItem contact,
+  ) => VoiceContactCandidate(
+    name: contact.name,
+    phone: contact.phone,
+    searchText:
+        '${contact.category}${contact.name}${contact.company}${contact.phone}${contact.displayRegion}',
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -1514,11 +1510,13 @@ class _MapCardState extends State<MapCard> {
                                   .where((name) => name.trim().isNotEmpty)
                                   .toList();
                               return MapMarker(
-                                left: data
+                                left:
+                                    data
                                         .project(province.center, viewportSize)
                                         .dx /
                                     viewportSize.width,
-                                top: data
+                                top:
+                                    data
                                         .project(province.center, viewportSize)
                                         .dy /
                                     viewportSize.height,
@@ -1727,14 +1725,17 @@ class ChinaMapData {
   ChinaMapData(this.provinces) {
     final points = [
       for (final province in provinces)
-        for (final ring in province.rings)
-          ...ring,
+        for (final ring in province.rings) ...ring,
     ];
     if (points.isEmpty) {
       _minLongitude = 73.5;
       _maxLongitude = 135.0;
       _minLatitude = 18.0;
       _maxLatitude = 54.5;
+      _minProjectedX = _projectedX(_minLongitude);
+      _maxProjectedX = _projectedX(_maxLongitude);
+      _minProjectedY = _projectedY(_minLatitude);
+      _maxProjectedY = _projectedY(_maxLatitude);
       return;
     }
     _minLongitude = points
@@ -1749,6 +1750,10 @@ class ChinaMapData {
     _maxLatitude = points
         .map((point) => point.dy)
         .reduce((a, b) => a > b ? a : b);
+    _minProjectedX = _projectedX(_minLongitude);
+    _maxProjectedX = _projectedX(_maxLongitude);
+    _minProjectedY = _projectedY(_minLatitude);
+    _maxProjectedY = _projectedY(_maxLatitude);
   }
 
   final List<ChinaProvince> provinces;
@@ -1756,6 +1761,10 @@ class ChinaMapData {
   late final double _maxLongitude;
   late final double _minLatitude;
   late final double _maxLatitude;
+  late final double _minProjectedX;
+  late final double _maxProjectedX;
+  late final double _minProjectedY;
+  late final double _maxProjectedY;
 
   static Future<ChinaMapData> load() async {
     final raw = jsonDecode(
@@ -1808,25 +1817,31 @@ class ChinaMapData {
   }
 
   double x(double longitude) {
-    final span = _maxLongitude - _minLongitude;
+    final span = _maxProjectedX - _minProjectedX;
     if (span <= 0) return .5;
-    return (.025 + (longitude - _minLongitude) / span * .95).clamp(.025, .975);
+    return (.025 + (_projectedX(longitude) - _minProjectedX) / span * .95)
+        .clamp(.025, .975);
   }
 
   double y(double latitude) {
-    final span = _maxLatitude - _minLatitude;
+    final span = _maxProjectedY - _minProjectedY;
     if (span <= 0) return .5;
-    return (.025 + (_maxLatitude - latitude) / span * .95).clamp(.025, .975);
+    return (.025 + (_maxProjectedY - _projectedY(latitude)) / span * .95).clamp(
+      .025,
+      .975,
+    );
   }
 
   Offset project(Offset coordinate, Size size) {
     const padding = 8.0;
-    final availableWidth =
-        (size.width - padding * 2).clamp(1.0, double.infinity).toDouble();
-    final availableHeight =
-        (size.height - padding * 2).clamp(1.0, double.infinity).toDouble();
-    final longitudeSpan = (_maxLongitude - _minLongitude).abs();
-    final latitudeSpan = (_maxLatitude - _minLatitude).abs();
+    final availableWidth = (size.width - padding * 2)
+        .clamp(1.0, double.infinity)
+        .toDouble();
+    final availableHeight = (size.height - padding * 2)
+        .clamp(1.0, double.infinity)
+        .toDouble();
+    final longitudeSpan = (_maxProjectedX - _minProjectedX).abs();
+    final latitudeSpan = (_maxProjectedY - _minProjectedY).abs();
     final horizontalScale = availableWidth / longitudeSpan;
     final verticalScale = availableHeight / latitudeSpan;
     final scale = horizontalScale < verticalScale
@@ -1837,9 +1852,16 @@ class ChinaMapData {
     final left = (size.width - mapWidth) / 2;
     final top = (size.height - mapHeight) / 2;
     return Offset(
-      left + (coordinate.dx - _minLongitude) * scale,
-      top + (_maxLatitude - coordinate.dy) * scale,
+      left + (_projectedX(coordinate.dx) - _minProjectedX) * scale,
+      top + (_maxProjectedY - _projectedY(coordinate.dy)) * scale,
     );
+  }
+
+  double _projectedX(double longitude) => longitude * math.pi / 180;
+
+  double _projectedY(double latitude) {
+    final radians = latitude * math.pi / 180;
+    return math.log(math.tan(math.pi / 4 + radians / 2));
   }
 }
 
